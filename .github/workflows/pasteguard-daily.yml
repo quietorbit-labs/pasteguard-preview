@@ -1,0 +1,84 @@
+name: PasteGuard daily cloud video and assessment
+on:
+  push:
+    paths: ['automation/**', '.github/workflows/pasteguard-daily.yml']
+    branches: ['main', 'pasteguard-cloud-setup']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish once today after rendering (requires connected Meta account)'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 5,11,17 * * *'
+      timezone: 'America/Chicago'
+    - cron: '0,30 23 * * *'
+      timezone: 'America/Chicago'
+permissions:
+  contents: read
+concurrency:
+  group: pasteguard-growth
+  cancel-in-progress: false
+jobs:
+  cloud-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      IG_API_VERSION: ${{ vars.IG_API_VERSION }}
+      IG_API_HOST: ${{ vars.IG_API_HOST || 'https://graph.instagram.com' }}
+      IG_PUBLISH_ENABLED: ${{ vars.IG_PUBLISH_ENABLED }}
+      CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
+      GITHUB_TOKEN: ${{ github.token }}
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Install rendering tools
+        run: |
+          python -m pip install 'Pillow>=11,<13'
+          npm install --no-save playwright@1
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Test identity and duplicate protection
+        run: python -m unittest discover -s automation -p 'test_*.py' -v
+      - name: Assess and plan
+        run: python automation/bot.py prepare
+      - name: Capture fresh fake-data demo
+        run: node automation/capture.mjs
+      - name: Render and decode video
+        run: |
+          python automation/render.py
+          python automation/bot.py verify
+      - name: Publish once in the daily slot
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '0,30 23 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+        run: python automation/bot.py publish
+      - name: Keep intended-public demo assets and setup status
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: pasteguard-demo-${{ github.run_id }}
+          retention-days: 14
+          path: |
+            run/video.mp4
+            run/cover.jpg
+            run/caption.txt
+            run/proof-*.jpg
+            run/verification.json
+            run/assessment-status.json
+      - name: State the actual result
+        if: always()
+        run: |
+          echo '### PasteGuard cloud job' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Rendering runs on GitHub, independent of the owner PC. A rendering success is not publication confirmation. Publishing requires the connected Meta account and explicit enabled setting. Check the publishing step and durable state.' >> "$GITHUB_STEP_SUMMARY"
