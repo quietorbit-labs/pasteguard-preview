@@ -1,0 +1,27 @@
+name: PasteGuard read-only connection check
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['automation/check_connections.py', 'automation/bot.py', '.github/workflows/pasteguard-connections.yml']
+permissions:
+  contents: read
+jobs:
+  connections:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      IG_API_VERSION: ${{ vars.IG_API_VERSION }}
+      IG_API_HOST: ${{ vars.IG_API_HOST || 'https://graph.instagram.com' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Verify account connections without publishing
+        run: python automation/check_connections.py
