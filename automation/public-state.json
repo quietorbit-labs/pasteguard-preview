@@ -17,6 +17,12 @@
       "container_id": "17906757852394868",
       "media_id": "17911646829604025",
       "permalink": "https://www.instagram.com/reel/DfUgPQtNteL/"
+    },
+    "2026-11-07": {
+      "phase": "prepared",
+      "caption": "Keep context. Check before sharing.\n\nRecorded website demo with fake data: PasteGuard hides a detected sensitive pattern and keeps the surrounding text. Edited before/after comparison.\n\nTry the free demo \u2014 link in bio.\npasteguard.pages.dev\n\nCan miss secrets. Review before sharing.\n#DeveloperTools #DataPrivacy #AITools",
+      "example": "support_email",
+      "hook": "Keep context"
     }
   }
 }
