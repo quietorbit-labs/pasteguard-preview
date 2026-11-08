@@ -1,55 +1,113 @@
 from pathlib import Path
-from PIL import Image,ImageDraw,ImageFont
-import json,subprocess,math,wave,struct,shutil
+import json
+import shutil
+import subprocess
+
+from PIL import Image, ImageDraw, ImageFont
+
+WIDTH, HEIGHT = 1080, 1920
+FPS, SECONDS = 30, 7
+INK, MUTED = '#132924', '#49605a'
+BACKGROUND = '#f5f6f0'
+FONT_PATHS = {
+    'heading': ('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                'C:/Windows/Fonts/segoeuib.ttf'),
+    'code': ('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+             'C:/Windows/Fonts/consola.ttf'),
+}
+
+
+def fitted_font(draw, lines, width, size, family='heading'):
+    path = next(path for path in FONT_PATHS[family] if Path(path).is_file())
+    font = ImageFont.truetype(path, size)
+    while max(draw.textlength(line, font=font) for line in lines) > width:
+        size -= 2
+        font = ImageFont.truetype(path, size)
+    return font
+
+
+def draw_card(draw, top, label, value, highlight, color, fill, code_font):
+    draw.rounded_rectangle((76, top, 1004, top + 284), 30, fill='white',
+                           outline='#dce4dc', width=3)
+    label_font = fitted_font(draw, [label], 820, 41)
+    draw.text((120, top + 28), label, font=label_font, fill=color)
+    for index, line in enumerate(value.splitlines()):
+        y = top + 113 + index * 60
+        x = 120
+        if highlight in line:
+            left, match, right = line.partition(highlight)
+            start = x + draw.textlength(left, font=code_font)
+            end = start + draw.textlength(match, font=code_font)
+            draw.rounded_rectangle((start - 4, y - 3, end + 4, y + 51), 8, fill=fill)
+            draw.text((start, y), match, font=code_font, fill=color)
+            draw.text((x, y), left, font=code_font, fill=INK)
+            draw.text((end, y), right, font=code_font, fill=INK)
+        else:
+            draw.text((x, y), line, font=code_font, fill=INK)
+
 
 def render(directory='run'):
- p=Path(directory); plan=json.loads((p/'plan.json').read_text()); fps=30; duration=8.5
- fonts=[Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),Path('C:/Windows/Fonts/segoeuib.ttf')]
- font_path=next(f for f in fonts if f.exists())
- def font(size): return ImageFont.truetype(str(font_path),size)
- def card(name):
-  image=Image.open(p/name).convert('RGB'); crop_height=min(image.height,round(image.width*132/310))
-  return image.crop((0,0,image.width,crop_height)).resize((930,396),Image.Resampling.LANCZOS)
- before,after,empty=[card(f) for f in ('before.png','after.png','empty.png')]
- exe=shutil.which('ffmpeg')
- if not exe:
-  import imageio_ffmpeg
-  exe=imageio_ffmpeg.get_ffmpeg_exe()
- with (p/'encode.log').open('wb') as log:
-  proc=subprocess.Popen([exe,'-y','-f','rawvideo','-pix_fmt','rgb24','-s','1080x1920','-r','30','-i','pipe:0','-an','-c:v','libx264','-preset','veryfast','-crf','19','-pix_fmt','yuv420p','-movflags','+faststart',str(p/'silent.mp4')],stdin=subprocess.PIPE,stderr=log,stdout=log)
-  for n in range(round(fps*duration)):
-   t=n/fps; image=Image.new('RGB',(1080,1920),'#f4f3ed'); d=ImageDraw.Draw(image)
-   d.rounded_rectangle((70,130,1010,225),25,fill='#102a27'); d.text((105,146),'PasteGuard',font=font(48),fill='#a1efc6')
-   d.text((975,160),'WEBSITE DEMO',font=font(24),fill='white',anchor='rt')
-   hook=plan['hook'] if t<2.5 else ('Paste once' if t<3.5 else ('Keep context' if t<5.5 else 'Try free'))
-   face=font(90)
-   while d.textlength(hook,font=face)>940:face=font(face.size-2)
-   d.text((70,270),hook,font=face,fill='#112d2a')
-   d.text((74,394),'Link in bio.' if t>=5.5 else plan['example']['subtitle'],font=font(37),fill='#43534e')
-   for y,label,color,frame in [(520,'BEFORE','#a23d2e',before),(1080,'AFTER','#1b7154',after)]:
-    d.rounded_rectangle((60,y,1020,y+490),28,fill='white',outline='#d7dfd7',width=3)
-    demo=label=='AFTER' and 2.5<=t<3.0
-    d.text((92,y+23),'PASTE DEMO' if demo else label,font=font(31),fill=color)
-    image.paste(empty if demo else frame,(75,y+78))
-   if t>=5.5:
-    d.rounded_rectangle((70,1610,1010,1710),24,fill='#102a27');d.text((540,1622),'Link in bio',font=font(55),fill='#a1efc6',anchor='mt')
-   else:d.text((540,1630),'Fake data · real browser demo',font=font(31),fill='#43534e',anchor='mt')
-   d.text((540,1750),'pasteguard.pages.dev',font=font(46),fill='#112d2a',anchor='mt')
-   d.text((540,1830),'Can miss secrets. Review before sharing.',font=font(27),fill='#43534e',anchor='mt')
-   d.text((540,1870),'Edited comparison · not a speed benchmark',font=font(23),fill='#43534e',anchor='mt')
-   if n==0:image.save(p/'cover.jpg',quality=95)
-   if n in (0,90,210):image.save(p/f'proof-{n}.jpg',quality=95)
-   proc.stdin.write(image.tobytes())
-  proc.stdin.close()
-  if proc.wait()!=0:raise RuntimeError('Encoding failed')
- sr=48000;pcm=bytearray()
- for n in range(round(sr*duration)):
-  t=n/sr;env=min(1,t/.12)*min(1,(duration-t)/.3)
-  value=.01*env*sum(math.sin(2*math.pi*f*t)*math.exp(-(t%1.5)*1.2) for f in (220,261.63,329.63))
-  pcm.extend(struct.pack('<h',round(value*32767)))
- with wave.open(str(p/'audio.wav'),'wb') as w:w.setnchannels(1);w.setsampwidth(2);w.setframerate(sr);w.writeframes(pcm)
- subprocess.run([exe,'-y','-i',str(p/'silent.mp4'),'-i',str(p/'audio.wav'),'-c:v','copy','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',str(p/'video.mp4')],check=True,capture_output=True)
- subprocess.run([exe,'-v','error','-i',str(p/'video.mp4'),'-f','null','-'],check=True,capture_output=True)
- (p/'caption.txt').write_text(plan['caption'],encoding='utf-8')
- (p/'verification.json').write_text(json.dumps({'seconds':duration,'width':1080,'height':1920,'fps':fps,'audio':'Original quiet synthesized chords, no voiceover','decode_passed':True,'source':'Fresh website comparison; real clipboard paste; fake data; edited timing'},indent=2))
-if __name__=='__main__':render()
+    folder = Path(directory)
+    plan = json.loads((folder / 'plan.json').read_text(encoding='utf-8'))
+    capture = json.loads((folder / 'capture.json').read_text(encoding='utf-8'))
+    before, after = capture['before'], capture['after']
+    secret = plan['example']['secret']
+    if before != plan['example']['text'] or secret in after or '[REDACTED]' not in after:
+        raise ValueError('Capture did not verify this redaction')
+
+    def frame(show_after, show_link):
+        image = Image.new('RGB', (WIDTH, HEIGHT), BACKGROUND)
+        draw = ImageDraw.Draw(image)
+        label = plan['example']['label'].upper()
+        draw.text((78, 225), label, font=fitted_font(draw, [label], 900, 38), fill=MUTED)
+        title = plan['hook']
+        draw.text((76, 304), title, font=fitted_font(draw, [title], 928, 83), fill=INK)
+        code_font = fitted_font(draw, before.splitlines() + after.splitlines(), 840, 48, 'code')
+        draw_card(draw, 480, 'BEFORE', before, secret, '#9d3525', '#ffebe5', code_font)
+        if show_after:
+            draw_card(draw, 822, 'AFTER PASTING', after, '[REDACTED]', '#176644', '#def6e6', code_font)
+            line = 'Secret hidden. Context kept.'
+            draw.text((78, 1165), line, font=fitted_font(draw, [line], 920, 51), fill=INK)
+        if show_link:
+            cta = 'Try PasteGuard free · link in bio'
+            draw.text((78, 1328), cta, font=fitted_font(draw, [cta], 920, 42), fill='#176644')
+        note = 'Fake data · review before sharing'
+        draw.text((78, 1450), note, font=fitted_font(draw, [note], 920, 30), fill=MUTED)
+        return image
+
+    intro, reveal, close = frame(False, False), frame(True, False), frame(True, True)
+    intro.save(folder / 'cover.jpg', quality=95)
+    for second, still in ((0, intro), (2, reveal), (5, close)):
+        still.save(folder / f'proof-{second * FPS}.jpg', quality=95)
+
+    exe = shutil.which('ffmpeg')
+    if not exe:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+    video = folder / 'video.mp4'
+    with (folder / 'encode.log').open('wb') as log:
+        with subprocess.Popen(
+            [exe, '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{WIDTH}x{HEIGHT}',
+             '-r', str(FPS), '-i', 'pipe:0', '-an', '-c:v', 'libx264', '-preset', 'veryfast',
+             '-crf', '19', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(video)],
+            stdin=subprocess.PIPE, stderr=log, stdout=log,
+        ) as process:
+            for still, frames in ((intro, 42), (reveal, 108), (close, 60)):
+                pixels = still.tobytes()
+                for _ in range(frames):
+                    process.stdin.write(pixels)
+            process.stdin.close()
+            if process.wait():
+                raise RuntimeError('Video encoding failed')
+    subprocess.run([exe, '-v', 'error', '-i', str(video), '-f', 'null', '-'],
+                   check=True, capture_output=True)
+    (folder / 'caption.txt').write_text(plan['caption'], encoding='utf-8')
+    (folder / 'verification.json').write_text(json.dumps({
+        'seconds': SECONDS, 'width': WIDTH, 'height': HEIGHT, 'fps': FPS,
+        'audio': 'none', 'decode_passed': True,
+        'source': 'Text reproduced from a verified clipboard paste on the live demo using fake data',
+    }, indent=2), encoding='utf-8')
+
+
+if __name__ == '__main__':
+    render()

@@ -4,12 +4,18 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT=Path('run'); TZ=ZoneInfo('America/Chicago'); USERNAME='pasteguard.local'
-EXAMPLES=[
- {'name':'error_log','text':'Explain this log:\npassword="DemoOnly_4829"\nerror=HTTP_500','secret':'DemoOnly_4829','context':'error=HTTP_500','subtitle':'Check logs before sharing.'},
- {'name':'support_email','text':'Summarize this ticket:\nEmail: demo@example.com\nissue=login_timeout','secret':'demo@example.com','context':'issue=login_timeout','subtitle':'Check customer details.'},
- {'name':'config_key','text':'Explain this config:\nAKIA0000000000000000\nregion=us-east-1','secret':'AKIA0000000000000000','context':'region=us-east-1','subtitle':'Check config before sharing.'},
+EXAMPLES = [
+ {'name':'error_log','text':'error=HTTP_500\npassword="DemoOnly_4829"','secret':'DemoOnly_4829','context':'error=HTTP_500','label':'Error log','hooks':('Password in your logs?', 'Hide the log password')},
+ {'name':'support_ticket','text':'Issue: login timeout\nEmail: demo@example.com','secret':'demo@example.com','context':'Issue: login timeout','label':'Support ticket','hooks':('Email in your ticket?', 'Hide the customer email')},
+ {'name':'cloud_config','text':'region=us-east-1\nAKIA0000000000000000','secret':'AKIA0000000000000000','context':'region=us-east-1','label':'Cloud config','hooks':('AWS key in your config?', 'Hide the AWS key')},
+ {'name':'code_review','text':'Review: fix API retries\nghp_000000000000000000000000000000000000','secret':'ghp_000000000000000000000000000000000000','context':'Review: fix API retries','label':'Code review','hooks':('Token in your PR notes?', 'Hide the GitHub token')},
+ {'name':'team_chat','text':'Deploy failed: 403\nxoxb-00000000-00000000','secret':'xoxb-00000000-00000000','context':'Deploy failed: 403','label':'Team chat','hooks':('Token in your Slack chat?', 'Hide the Slack token')},
+ {'name':'integration_debug','text':'Webhook returned 401\nclient_secret=FakeOnly_8321','secret':'FakeOnly_8321','context':'Webhook returned 401','label':'Webhook debug','hooks':('Secret in your webhook log?', 'Hide the client secret')},
 ]
-HOOKS=['Spot it','Before AI','Keep context','Check first']
+HOOKS = ('problem', 'action')
+HOOK_STYLE_BY_TITLE = {
+ title: style for example in EXAMPLES for style, title in zip(HOOKS, example['hooks'])
+}
 class SetupRequired(RuntimeError):pass
 
 def scheduled_slot(day, now):
@@ -88,7 +94,7 @@ def assessment():
   groups={}
   for item in mature:
    caption=item['media'].get('caption',''); watch=item['metrics'].get('ig_reels_avg_watch_time')
-   hook=next((h for h in HOOKS if caption.startswith(h+'. Check before sharing.')),None)
+   hook=HOOK_STYLE_BY_TITLE.get(caption.split('\n', 1)[0])
    if hook and watch is not None:groups.setdefault(hook,[]).append(watch)
   eligible={h:sum(values)/len(values) for h,values in groups.items() if len(values)>=3}
   if len(eligible)>=2:
@@ -109,10 +115,15 @@ def assessment():
  return data
 def public_assessment(data):return {k:v for k,v in data.items() if not k.startswith('_')}
 def plan(data,date):
- index=date.toordinal(); example=EXAMPLES[index%len(EXAMPLES)]; hook=HOOKS[(index//len(EXAMPLES))%len(HOOKS)]
- if data.get('suggested_hook') in HOOKS and index%3!=0:hook=data['suggested_hook']
- caption=f"{hook}. Check before sharing.\n\nRecorded website demo with fake data: PasteGuard hides a detected sensitive pattern and keeps the surrounding text. Edited before/after comparison.\n\nTry the free demo — link in bio.\npasteguard.pages.dev\n\nCan miss secrets. Review before sharing.\n#DeveloperTools #DataPrivacy #AITools"
+ index = date.toordinal()
+ example = EXAMPLES[index % len(EXAMPLES)]
+ style = HOOKS[(index // len(EXAMPLES)) % len(HOOKS)]
+ if data.get('suggested_hook') in HOOKS and index % 3 != 0:
+  style = data['suggested_hook']
+ hook = example['hooks'][HOOKS.index(style)]
+ caption = f"{hook}\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry free: link in bio."
  return {'date':date.isoformat(),'example':example,'hook':hook,'caption':caption,'decision':data['decision']}
+
 def github(path,data=None,method=None):return request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/'+path,os.environ['GITHUB_TOKEN'],data,method)
 def load_ledger():
  try:
