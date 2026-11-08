@@ -11,6 +11,13 @@ EXAMPLES=[
 ]
 HOOKS=['Spot it','Before AI','Keep context','Check first']
 class SetupRequired(RuntimeError):pass
+
+def scheduled_slot(day, now):
+ start = dt.datetime.combine(dt.date.fromisoformat(day), dt.time(23), tzinfo=TZ)
+ if not start - dt.timedelta(minutes=20) <= now < start + dt.timedelta(minutes=15):
+  raise SetupRequired('Scheduled publishing window missed (11:00–11:15 PM Central)')
+ return start
+
 def request(url,token=None,data=None,method=None):
  headers={'User-Agent':'PasteGuardCloud/1.0','Accept':'application/json'}
  if token:headers['Authorization']='Bearer '+token
@@ -20,8 +27,17 @@ def request(url,token=None,data=None,method=None):
  try:
   with urllib.request.urlopen(req,timeout=45) as r:return json.load(r)
  except urllib.error.HTTPError as e:
-  # Do not print API URLs, bodies or tokens; permissions errors must stay explicit.
-  raise RuntimeError('Remote API returned HTTP '+str(e.code)) from None
+  host = urllib.parse.urlsplit(url).hostname
+  service = {'graph.facebook.com': 'Instagram', 'graph.instagram.com': 'Instagram',
+             'api.cloudflare.com': 'Cloudflare', 'api.github.com': 'GitHub'}.get(host, 'Remote API')
+  details = {}
+  try:
+   error = json.loads(e.read(32768)).get('error', {})
+   details = {key: error[key] for key in ('code', 'error_subcode') if type(error.get(key)) is int}
+  except (ValueError, TypeError, AttributeError, OSError):
+   pass
+  suffix = ''.join(f', {key} {value}' for key, value in details.items())
+  raise RuntimeError(f'{service} returned HTTP {e.code}{suffix}') from None
 def ig(path,params=None,post=False):
  host=os.getenv('IG_API_HOST','https://graph.instagram.com')
  if host not in ('https://graph.instagram.com','https://graph.facebook.com'):raise SetupRequired('IG_API_HOST must be a supported Meta host')
@@ -41,14 +57,23 @@ def media_metrics(media_id):
    if response.get('data'):result[metric]=number(response['data'][0])
   except RuntimeError:unavailable.append(metric)
  return result,unavailable
+def instagram_media():
+ uid = os.getenv('IG_USER_ID')
+ if not uid or not os.getenv('IG_ACCESS_TOKEN'):
+  return None
+ identity = ig(uid, {'fields': 'id,username'})
+ if identity.get('username') != USERNAME:
+  raise SetupRequired('Instagram token belongs to the wrong account; publishing blocked')
+ response = ig(uid + '/media', {'fields': 'id,caption,timestamp,media_type,permalink', 'limit': 30})
+ if not isinstance(response.get('data'), list):
+  raise SetupRequired('Instagram did not return the account media list; publishing blocked')
+ return response['data']
+
 def assessment():
  data={'instagram_connected':False,'website_analytics_connected':False,'decision':'explore_no_winner','retention_available':False,'sample_sufficient':False}
- token=os.getenv('IG_ACCESS_TOKEN'); uid=os.getenv('IG_USER_ID')
- if token and uid:
-  identity=ig(uid,{'fields':'id,username'})
-  if identity.get('username')!=USERNAME:raise SetupRequired('Instagram token belongs to the wrong account; publishing blocked')
-  data['instagram_connected']=True
-  media=ig(uid+'/media',{'fields':'id,caption,timestamp,media_type,permalink','limit':30}).get('data',[])
+ media = instagram_media()
+ if media is not None:
+  data['instagram_connected'] = True
   recent=[]
   for item in media[:20]:
    if item.get('media_type')!='VIDEO':continue
@@ -74,9 +99,13 @@ def assessment():
  if cf_token and account and site:
   now=dt.datetime.now(dt.timezone.utc); start=now-dt.timedelta(days=7)
   query='query($account: String!, $start: Time!, $end: Time!, $site: String!){viewer{accounts(filter:{accountTag:$account}){rumPageloadEventsAdaptiveGroups(limit:100,filter:{datetime_geq:$start,datetime_leq:$end,siteTag:$site}){count dimensions{requestPath refererHost} sum{visits}}}}}'
-  response=request('https://api.cloudflare.com/client/v4/graphql',cf_token,{'query':query,'variables':{'account':account,'start':start.isoformat(),'end':now.isoformat(),'site':site}})
-  if response.get('errors'):data['website_analytics_status']='query_failed_check_permissions_or_schema'
-  else:data['website_analytics_connected']=True; data['_website']=response.get('data')
+  try:
+   response=request('https://api.cloudflare.com/client/v4/graphql',cf_token,{'query':query,'variables':{'account':account,'start':start.isoformat(),'end':now.isoformat(),'site':site}})
+   if response.get('errors'):data['website_analytics_status']='query_failed_check_permissions_or_schema'
+   else:data['website_analytics_connected']=True; data['_website']=response.get('data')
+  except (RuntimeError, OSError):
+   data['website_analytics_status'] = 'request_failed'
+   print('Cloudflare website analytics unavailable; continuing with Instagram data.')
  return data
 def public_assessment(data):return {k:v for k,v in data.items() if not k.startswith('_')}
 def plan(data,date):
@@ -97,21 +126,31 @@ def save_ledger(state,sha):
  if sha:body['sha']=sha
  result=github('contents/automation/public-state.json',body,'PUT')
  return result['content']['sha']
+def already_posted(day, media, state, sha):
+ for item in media:
+  stamp = dt.datetime.fromisoformat(item['timestamp'].replace('Z', '+00:00')).astimezone(TZ)
+  if stamp.date().isoformat() == day:
+   state['days'][day] = {'phase': 'observed_manual_post', 'media_id': item['id']}
+   save_ledger(state, sha)
+   return True
+ return False
+
 def publish(plan_data,assessment_data):
  if not assessment_data.get('instagram_connected'):raise SetupRequired('Instagram publishing/insights connection is missing')
  if os.getenv('IG_PUBLISH_ENABLED')!='true':raise SetupRequired('Publishing is not enabled; authorize Meta and set IG_PUBLISH_ENABLED=true')
  if os.getenv('GITHUB_REF_NAME')!='main':raise SetupRequired('Publishing is restricted to the default main branch')
  uid=os.environ['IG_USER_ID']; day=plan_data['date'];state,sha=load_ledger();entry=state['days'].get(day,{})
+ scheduled = os.getenv('GITHUB_EVENT_NAME') == 'schedule'
+ if scheduled:
+  start = scheduled_slot(day, dt.datetime.now(TZ))
  # The API account and durable ledger both guard against manual posts and retries.
  if entry.get('phase') in ('published','observed_manual_post'):return 'already_handled_no_duplicate'
  if entry.get('phase')=='publishing':
   if entry.get('container_id') and ig(entry['container_id'],{'fields':'status_code'}).get('status_code')=='PUBLISHED':
    entry['phase']='published';save_ledger(state,sha);return 'published_confirmed_by_container'
   raise SetupRequired('Previous publish result is unconfirmed. Inspect the account/container; automatic retry is blocked to prevent duplicates')
- for item in assessment_data.get('_recent',[]):
-  stamp=dt.datetime.fromisoformat(item['media']['timestamp'].replace('Z','+00:00')).astimezone(TZ).date().isoformat()
-  if stamp==day:
-   state['days'][day]={'phase':'observed_manual_post','media_id':item['media']['id']};save_ledger(state,sha);return 'already_posted_today'
+ if already_posted(day, [item['media'] for item in assessment_data.get('_recent', [])], state, sha):
+  return 'already_posted_today'
  caption=entry.get('caption',plan_data['caption'])
  if not entry:
   entry={'phase':'prepared','caption':caption,'example':plan_data['example']['name'],'hook':plan_data['hook']};state['days'][day]=entry;sha=save_ledger(state,sha)
@@ -135,6 +174,21 @@ def publish(plan_data,assessment_data):
   if status in ('ERROR','EXPIRED'):raise RuntimeError('Meta rejected or expired the media container; no automatic replacement posted')
   time.sleep(10)
  else:raise RuntimeError('Container still processing; retry must reuse the saved container')
+ if scheduled:
+  remaining = (start - dt.datetime.now(TZ)).total_seconds()
+  if remaining > 0:
+   time.sleep(remaining)
+ # Refresh the duplicate check after staging and any wait.
+ fresh_media = instagram_media()
+ if fresh_media is None:
+  raise SetupRequired('Instagram connection missing before publish')
+ if already_posted(day, fresh_media, state, sha):
+  return 'already_posted_today'
+ if scheduled:
+  now = dt.datetime.now(TZ)
+  scheduled_slot(day, now)
+  if now < start:
+   raise SetupRequired('Scheduled publish cannot start before 11 PM Central')
  # Persist intent before the consequential request. An ambiguous result fails closed on retry.
  entry['phase']='publishing';sha=save_ledger(state,sha)
  result=ig(uid+'/media_publish',{'creation_id':entry['container_id']},post=True)
@@ -149,8 +203,13 @@ def main():
  if args.task=='verify':
   if not (ROOT/'verification.json').exists():raise RuntimeError('Video has not been rendered')
   print('Cloud rendering and full video decode passed. This does not prove publishing is connected.');return
- now=dt.datetime.now(TZ); date=dt.date.fromisoformat(args.date) if args.date else now.date();data=assessment()
- public=public_assessment(data);(ROOT/'assessment-status.json').write_text(json.dumps(public,indent=2))
+ now=dt.datetime.now(TZ); date=dt.date.fromisoformat(args.date) if args.date else now.date()
+ if args.task == 'publish':
+  media = instagram_media()
+  data = {'instagram_connected': media is not None, '_recent': [{'media': item} for item in media or []]}
+ else:
+  data = assessment()
+  (ROOT/'assessment-status.json').write_text(json.dumps(public_assessment(data),indent=2))
  if args.task in ('prepare','auto'):
   (ROOT/'plan.json').write_text(json.dumps(plan(data,date),indent=2))
  if args.task=='publish':
@@ -161,7 +220,7 @@ def main():
  elif args.task=='auto':
   if now.hour!=23:print('Assessment completed; no publishing outside the daily slot.')
   else:raise SetupRequired('Use the workflow publishing phase after capture/render; do not publish an unrendered plan')
- else:print(json.dumps(public))
+ else:print(json.dumps(public_assessment(data)))
 if __name__=='__main__':
  try:main()
  except (SetupRequired,RuntimeError) as e:print('ACTION REQUIRED: '+str(e));raise SystemExit(2)

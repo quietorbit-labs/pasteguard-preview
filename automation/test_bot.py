@@ -2,6 +2,16 @@ import unittest,datetime as dt
 from unittest.mock import patch
 import bot
 class GuardTests(unittest.TestCase):
+ def test_late_scheduled_run_cannot_publish_in_the_morning(self):
+  morning = dt.datetime(2026, 11, 4, 6, 54, tzinfo=bot.TZ)
+  with self.assertRaises(bot.SetupRequired):
+   bot.scheduled_slot('2026-11-04', morning)
+ def test_scheduled_slot_stages_early_and_closes_after_fifteen_minutes(self):
+  start = dt.datetime(2026, 11, 7, 23, tzinfo=bot.TZ)
+  self.assertEqual(bot.scheduled_slot('2026-11-07', start - dt.timedelta(minutes=15)), start)
+  self.assertEqual(bot.scheduled_slot('2026-11-07', start), start)
+  with self.assertRaises(bot.SetupRequired):
+   bot.scheduled_slot('2026-11-07', start + dt.timedelta(minutes=15))
  def test_missing_metrics_never_selects_winner(self):
   with patch.dict('os.environ',{},clear=True):self.assertEqual(bot.assessment()['decision'],'explore_no_winner')
  def test_plan_always_uses_fake_data_and_limits(self):
