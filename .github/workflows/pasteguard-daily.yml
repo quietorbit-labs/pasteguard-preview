@@ -9,22 +9,25 @@ on:
         description: 'Publish once today after rendering (requires connected Meta account)'
         type: boolean
         default: false
+      wait_for_slot:
+        description: 'Stage the reel now and publish at 11 PM Central'
+        type: boolean
+        default: false
   schedule:
     - cron: '17 5,11,17 * * *'
       timezone: 'America/Chicago'
-    - cron: '45 22 * * *'
-      timezone: 'America/Chicago'
-    - cron: '0,5,10 23 * * *'
-      timezone: 'America/Chicago'
+    # These UTC wakeups cover both Central offsets. Python sets the local publish time.
+    - cron: '13 0,1,2,3,4 * * *'
+    - cron: '3,9 5 * * *'
 permissions:
   contents: read
 concurrency:
-  group: pasteguard-growth
+  group: pasteguard-${{ ((github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'preview' }}
   cancel-in-progress: false
 jobs:
   cloud-job:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 330
     permissions:
       contents: write
     env:
@@ -38,15 +41,42 @@ jobs:
       CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
       GITHUB_TOKEN: ${{ github.token }}
       TZ: America/Chicago
+      IG_WAIT_FOR_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.wait_for_slot }}
+      PUBLISH_REQUESTED: ${{ (github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.12'
+      - name: Check whether tonight needs a reel
+        id: eligibility
+        if: env.PUBLISH_REQUESTED == 'true'
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import os
+          from automation import bot
+
+          now = dt.datetime.now(bot.TZ)
+          day = now.date().isoformat()
+          try:
+              if os.environ.get('IG_WAIT_FOR_SLOT') == 'true' or os.environ['GITHUB_EVENT_NAME'] == 'schedule':
+                  bot.scheduled_slot(day, now)
+              ledger, _ = bot.load_ledger()
+              phase = ledger['days'].get(day, {}).get('phase')
+              eligible = phase not in ('published', 'observed_manual_post')
+          except bot.SetupRequired as error:
+              print(error)
+              eligible = False
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print(f'eligible={str(eligible).lower()}', file=output)
+          PY
       - uses: actions/setup-node@v7.1.0
+        if: steps.eligibility.outputs.eligible != 'false'
         with:
           node-version: '24'
       - name: Install rendering tools
+        if: steps.eligibility.outputs.eligible != 'false'
         run: |
           python -m pip install 'Pillow>=11,<13'
           npm install --no-save playwright@1
@@ -54,20 +84,24 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Test identity and duplicate protection
+        if: steps.eligibility.outputs.eligible != 'false'
         run: python -m unittest discover -s automation -p 'test_*.py' -v
       - name: Assess and plan
+        if: steps.eligibility.outputs.eligible != 'false'
         run: python automation/bot.py prepare
       - name: Capture fresh fake-data demo
+        if: steps.eligibility.outputs.eligible != 'false'
         run: node automation/capture.mjs
       - name: Render and decode video
+        if: steps.eligibility.outputs.eligible != 'false'
         run: |
           python automation/render.py
           python automation/bot.py verify
       - name: Publish once in the daily slot
-        if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '45 22 * * *' || github.event.schedule == '0,5,10 23 * * *')) || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+        if: env.PUBLISH_REQUESTED == 'true' && steps.eligibility.outputs.eligible == 'true'
         run: python automation/bot.py publish
       - name: Keep intended-public demo assets and setup status
-        if: always()
+        if: always() && steps.eligibility.outputs.eligible != 'false'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: pasteguard-demo-${{ github.run_id }}

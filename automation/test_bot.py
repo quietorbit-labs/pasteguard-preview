@@ -8,7 +8,7 @@ class GuardTests(unittest.TestCase):
    bot.scheduled_slot('2026-11-04', morning)
  def test_scheduled_slot_stages_early_and_closes_after_fifteen_minutes(self):
   start = dt.datetime(2026, 11, 7, 23, tzinfo=bot.TZ)
-  self.assertEqual(bot.scheduled_slot('2026-11-07', start - dt.timedelta(minutes=15)), start)
+  self.assertEqual(bot.scheduled_slot('2026-11-07', start - dt.timedelta(hours=4)), start)
   self.assertEqual(bot.scheduled_slot('2026-11-07', start), start)
   with self.assertRaises(bot.SetupRequired):
    bot.scheduled_slot('2026-11-07', start + dt.timedelta(minutes=15))

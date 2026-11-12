@@ -18,9 +18,11 @@ HOOK_STYLE_BY_TITLE = {
 }
 class SetupRequired(RuntimeError):pass
 
+PUBLISH_PREPARATION_HOURS = 5
+
 def scheduled_slot(day, now):
  start = dt.datetime.combine(dt.date.fromisoformat(day), dt.time(23), tzinfo=TZ)
- if not start - dt.timedelta(minutes=20) <= now < start + dt.timedelta(minutes=15):
+ if not start - dt.timedelta(hours=PUBLISH_PREPARATION_HOURS) <= now < start + dt.timedelta(minutes=15):
   raise SetupRequired('Scheduled publishing window missed (11:00–11:15 PM Central)')
  return start
 
@@ -151,7 +153,7 @@ def publish(plan_data,assessment_data):
  if os.getenv('IG_PUBLISH_ENABLED')!='true':raise SetupRequired('Publishing is not enabled; authorize Meta and set IG_PUBLISH_ENABLED=true')
  if os.getenv('GITHUB_REF_NAME')!='main':raise SetupRequired('Publishing is restricted to the default main branch')
  uid=os.environ['IG_USER_ID']; day=plan_data['date'];state,sha=load_ledger();entry=state['days'].get(day,{})
- scheduled = os.getenv('GITHUB_EVENT_NAME') == 'schedule'
+ scheduled = os.getenv('IG_WAIT_FOR_SLOT') == 'true' or os.getenv('GITHUB_EVENT_NAME') == 'schedule'
  if scheduled:
   start = scheduled_slot(day, dt.datetime.now(TZ))
  # The API account and durable ledger both guard against manual posts and retries.
@@ -188,6 +190,7 @@ def publish(plan_data,assessment_data):
  if scheduled:
   remaining = (start - dt.datetime.now(TZ)).total_seconds()
   if remaining > 0:
+   print(f'Meta reel is ready. Waiting until {start.isoformat()} to publish.', flush=True)
    time.sleep(remaining)
  # Refresh the duplicate check after staging and any wait.
  fresh_media = instagram_media()
