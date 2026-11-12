@@ -22,7 +22,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: pasteguard-${{ ((github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'preview' }}
+  group: pasteguard-${{ ((github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Stage the November 11 live reel test')) && 'publish' || 'preview' }}
   cancel-in-progress: false
 jobs:
   cloud-job:
@@ -41,8 +41,8 @@ jobs:
       CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
       GITHUB_TOKEN: ${{ github.token }}
       TZ: America/Chicago
-      IG_WAIT_FOR_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.wait_for_slot }}
-      PUBLISH_REQUESTED: ${{ (github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+      IG_WAIT_FOR_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.wait_for_slot) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Stage the November 11 live reel test') }}
+      PUBLISH_REQUESTED: ${{ (github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Stage the November 11 live reel test') }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
@@ -62,6 +62,8 @@ jobs:
           try:
               if os.environ.get('IG_WAIT_FOR_SLOT') == 'true' or os.environ['GITHUB_EVENT_NAME'] == 'schedule':
                   bot.scheduled_slot(day, now)
+              if os.environ['GITHUB_EVENT_NAME'] == 'push' and day != '2026-11-11':
+                  raise bot.SetupRequired('One-time November 11 test date has passed')
               ledger, _ = bot.load_ledger()
               phase = ledger['days'].get(day, {}).get('phase')
               eligible = phase not in ('published', 'observed_manual_post')
