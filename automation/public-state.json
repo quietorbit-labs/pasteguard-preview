@@ -26,6 +26,12 @@
       "container_id": "17907896043394868",
       "media_id": "18004168770008653",
       "permalink": "https://www.instagram.com/reel/DfdjRyIuNTU/"
+    },
+    "2026-11-11": {
+      "phase": "prepared",
+      "caption": "Hide the client secret\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry free: link in bio.",
+      "example": "integration_debug",
+      "hook": "Hide the client secret"
     }
   }
 }
