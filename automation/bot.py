@@ -59,7 +59,7 @@ def number(item):
  return value if isinstance(value,(int,float)) else None
 def media_metrics(media_id):
  result={};unavailable=[]
- for metric in ('views','reach','saved','shares','total_interactions','ig_reels_avg_watch_time','ig_reels_video_view_total_time'):
+ for metric in ('views','reach','saved','shares','total_interactions','ig_reels_avg_watch_time','ig_reels_video_view_total_time','reels_skip_rate'):
   try:
    response=ig(media_id+'/insights',{'metric':metric})
    if response.get('data'):result[metric]=number(response['data'][0])
@@ -91,17 +91,34 @@ def assessment():
   mature=[r for r in recent if r['age_hours']>=24 and (r['metrics'].get('views') or 0)>=300]
   data['retention_available']=any(r['metrics'].get('ig_reels_avg_watch_time') is not None for r in mature)
   data['sample_sufficient']=len(mature)>=3
+  data['first_three_second_skip_rate_available'] = any(
+   reel['metrics'].get('reels_skip_rate') is not None for reel in recent
+  )
   # Compare only this bot's equally long demos. Three mature observations per
   # hook is a conservative exploration gate, not a scientific significance test.
-  groups={}
+  watch_times = {}
+  skip_rates = {}
   for item in mature:
-   caption=item['media'].get('caption',''); watch=item['metrics'].get('ig_reels_avg_watch_time')
-   hook=HOOK_STYLE_BY_TITLE.get(caption.split('\n', 1)[0])
-   if hook and watch is not None:groups.setdefault(hook,[]).append(watch)
-  eligible={h:sum(values)/len(values) for h,values in groups.items() if len(values)>=3}
-  if len(eligible)>=2:
-   data['decision']='repeat_observed_watch_time_leader'
-   data['suggested_hook']=max(eligible,key=eligible.get)
+   title = (item['media'].get('caption') or '').split('\n', 1)[0]
+   hook = HOOK_STYLE_BY_TITLE.get(title)
+   if not hook:
+    continue
+   watch = item['metrics'].get('ig_reels_avg_watch_time')
+   skip = item['metrics'].get('reels_skip_rate')
+   if watch is not None:
+    watch_times.setdefault(hook, []).append(watch)
+   if skip is not None:
+    skip_rates.setdefault(hook, []).append(skip)
+  eligible_skips = {hook: sum(values) / len(values) for hook, values in skip_rates.items()
+                    if len(values) >= 3}
+  eligible_watch = {hook: sum(values) / len(values) for hook, values in watch_times.items()
+                    if len(values) >= 3}
+  if len(eligible_skips) >= 2:
+   data['decision'] = 'repeat_observed_lower_early_skip_rate'
+   data['suggested_hook'] = min(eligible_skips, key=eligible_skips.get)
+  elif len(eligible_watch) >= 2:
+   data['decision'] = 'repeat_observed_watch_time_leader'
+   data['suggested_hook'] = max(eligible_watch, key=eligible_watch.get)
   data['_recent']=recent
  cf_token=os.getenv('CF_ANALYTICS_TOKEN'); account=os.getenv('CF_ACCOUNT_ID'); site=os.getenv('CF_SITE_TAG')
  if cf_token and account and site:
@@ -110,7 +127,18 @@ def assessment():
   try:
    response=request('https://api.cloudflare.com/client/v4/graphql',cf_token,{'query':query,'variables':{'account':account,'start':start.isoformat(),'end':now.isoformat(),'site':site}})
    if response.get('errors'):data['website_analytics_status']='query_failed_check_permissions_or_schema'
-   else:data['website_analytics_connected']=True; data['_website']=response.get('data')
+   else:
+    data['website_analytics_connected'] = True
+    data['_website'] = response.get('data')
+    accounts = (data['_website'] or {}).get('viewer', {}).get('accounts', [])
+    if accounts:
+     path_counts = {'/': 0, '/install-guide': 0, '/install-confirmed': 0}
+     for row in accounts[0].get('rumPageloadEventsAdaptiveGroups', []):
+      path = row['dimensions']['requestPath'].removesuffix('.html').rstrip('/') or '/'
+      if path in path_counts:
+       path_counts[path] += row['count']
+     data['_install_funnel'] = path_counts
+     data['install_funnel_query_available'] = True
   except (RuntimeError, OSError):
    data['website_analytics_status'] = 'request_failed'
    print('Cloudflare website analytics unavailable; continuing with Instagram data.')
@@ -123,7 +151,7 @@ def plan(data,date):
  if data.get('suggested_hook') in HOOKS and index % 3 != 0:
   style = data['suggested_hook']
  hook = example['hooks'][HOOKS.index(style)]
- caption = f"{hook}\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry free: link in bio."
+ caption = f"{hook}\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide."
  return {'date':date.isoformat(),'example':example,'hook':hook,'caption':caption,'decision':data['decision']}
 
 def github(path,data=None,method=None):return request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/'+path,os.environ['GITHUB_TOKEN'],data,method)
