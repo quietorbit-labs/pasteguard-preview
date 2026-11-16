@@ -37,11 +37,12 @@
       "permalink": "https://www.instagram.com/reel/DfoKBmJBFfV/"
     },
     "2026-11-15": {
-      "phase": "publishing",
+      "phase": "published",
       "caption": "Token in your PR notes?\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "code_review",
       "hook": "Token in your PR notes?",
-      "container_id": "17910509790394868"
+      "container_id": "17910509790394868",
+      "media_id": "18117453827466100"
     }
   }
 }
