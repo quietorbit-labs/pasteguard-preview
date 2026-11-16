@@ -23,10 +23,11 @@ on:
     - cron: '19 2 * * *'
     - cron: '19 3 * * *'
     - cron: '19 4 * * *'
+    - cron: '41 4 * * *'
 permissions:
   contents: read
 concurrency:
-  group: pasteguard-${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification')) && 'publish' || 'preview' }}
+  group: pasteguard-${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'preview' }}
   cancel-in-progress: false
 jobs:
   cloud-job:
@@ -45,9 +46,9 @@ jobs:
       CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
       GITHUB_TOKEN: ${{ github.token }}
       TZ: America/Chicago
-      IG_WAIT_FOR_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.wait_for_slot) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification') }}
+      IG_WAIT_FOR_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.wait_for_slot) }}
       NIGHTLY_TRIGGER: ${{ github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *' }}
-      PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification') }}
+      PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
@@ -71,8 +72,6 @@ jobs:
           if not eligible and os.environ['GITHUB_EVENT_NAME'] == 'schedule' and os.environ['NIGHTLY_TRIGGER'] != 'true':
               result = 'preview'
           if eligible and (os.environ.get('IG_WAIT_FOR_SLOT') == 'true' or os.environ['GITHUB_EVENT_NAME'] == 'schedule'):
-              if os.environ['GITHUB_EVENT_NAME'] == 'push' and day != '2026-11-15':
-                  raise SystemExit('The one-time November 15 test has expired')
               try:
                   bot.scheduled_slot(day, now)
               except bot.SetupRequired as error:
