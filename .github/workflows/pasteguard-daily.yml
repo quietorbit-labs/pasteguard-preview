@@ -17,12 +17,16 @@ on:
     - cron: '17 5,11,17 * * *'
       timezone: 'America/Chicago'
     # These UTC wakeups cover both Central offsets. Python sets the local publish time.
-    - cron: '13 0,1,2,3,4 * * *'
-    - cron: '3,9 5 * * *'
+    - cron: '19 0 * * *'
+    - cron: '37 0 * * *'
+    - cron: '19 1 * * *'
+    - cron: '19 2 * * *'
+    - cron: '19 3 * * *'
+    - cron: '19 4 * * *'
 permissions:
   contents: read
 concurrency:
-  group: pasteguard-${{ ((github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish)) && 'publish' || 'preview' }}
+  group: pasteguard-${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification')) && 'publish' || 'preview' }}
   cancel-in-progress: false
 jobs:
   cloud-job:
@@ -41,8 +45,9 @@ jobs:
       CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
       GITHUB_TOKEN: ${{ github.token }}
       TZ: America/Chicago
-      IG_WAIT_FOR_SLOT: ${{ github.event_name == 'workflow_dispatch' && inputs.wait_for_slot }}
-      PUBLISH_REQUESTED: ${{ (github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *') || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+      IG_WAIT_FOR_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.wait_for_slot) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification') }}
+      NIGHTLY_TRIGGER: ${{ github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *' }}
+      PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && github.ref_name == 'main' && github.event.head_commit.message == 'Start November 15 scheduled reel verification') }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
@@ -59,17 +64,25 @@ jobs:
 
           now = dt.datetime.now(bot.TZ)
           day = now.date().isoformat()
-          try:
-              if os.environ.get('IG_WAIT_FOR_SLOT') == 'true' or os.environ['GITHUB_EVENT_NAME'] == 'schedule':
+          ledger, _ = bot.load_ledger()
+          phase = ledger['days'].get(day, {}).get('phase')
+          eligible = phase not in ('published', 'observed_manual_post')
+          result = str(eligible).lower()
+          if not eligible and os.environ['GITHUB_EVENT_NAME'] == 'schedule' and os.environ['NIGHTLY_TRIGGER'] != 'true':
+              result = 'preview'
+          if eligible and (os.environ.get('IG_WAIT_FOR_SLOT') == 'true' or os.environ['GITHUB_EVENT_NAME'] == 'schedule'):
+              if os.environ['GITHUB_EVENT_NAME'] == 'push' and day != '2026-11-15':
+                  raise SystemExit('The one-time November 15 test has expired')
+              try:
                   bot.scheduled_slot(day, now)
-              ledger, _ = bot.load_ledger()
-              phase = ledger['days'].get(day, {}).get('phase')
-              eligible = phase not in ('published', 'observed_manual_post')
-          except bot.SetupRequired as error:
-              print(error)
-              eligible = False
+              except bot.SetupRequired as error:
+                  if os.environ['NIGHTLY_TRIGGER'] == 'true':
+                      raise SystemExit(str(error))
+                  if os.environ['GITHUB_EVENT_NAME'] != 'schedule':
+                      raise
+                  result = 'preview'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              print(f'eligible={str(eligible).lower()}', file=output)
+              print(f'eligible={result}', file=output)
           PY
       - uses: actions/setup-node@v7.1.0
         if: steps.eligibility.outputs.eligible != 'false'
