@@ -46,10 +46,11 @@
       "permalink": "https://www.instagram.com/reel/DfydOXntI9x/"
     },
     "2026-11-16": {
-      "phase": "prepared",
+      "phase": "processing",
       "caption": "Token in your Slack chat?\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "team_chat",
-      "hook": "Token in your Slack chat?"
+      "hook": "Token in your Slack chat?",
+      "container_id": "17910789213394868"
     }
   }
 }
