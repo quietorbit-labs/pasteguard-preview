@@ -1,4 +1,20 @@
-# PasteGuard 0.3.0 — experimental local AI preview
+# PasteGuard
+
+Hide recognized secrets before sharing debugging text.
+
+## Try the current preview
+
+[**Open the free browser demo**](https://pasteguard.pages.dev/?utm_source=github&utm_medium=readme&utm_campaign=first_tester#demo). Click **Try a fake example** to see detected values replaced with `[REDACTED]`. No account is required.
+
+If you paste logs or configs into AI chats, [tell us whether this helps your workflow](https://github.com/quietorbit-labs/pasteguard-preview/issues/1). One sentence about what worked or blocked you helps improve the preview.
+
+[Install the current v0.6.1 Chrome preview](https://pasteguard.pages.dev/install-guide). Download the ZIP from that guide, then use Chrome's **Load unpacked** setup. The guide also has an optional installation check.
+
+The demo scans text locally. Website visits are measured in aggregate. PasteGuard can miss secrets, and support varies by editor. Test with fake data and review before sharing.
+
+## Repository source and optional local AI
+
+The source below documents the earlier v0.3.0 local AI build. For the current downloadable browser preview, use the installation guide above.
 
 **This is a test build, not complete leak protection.** Rules detect selected API keys and labeled credentials. Optional local AI adds context-based names, locations and selected private identifiers after a 300 ms typing pause. Optional guessing handles some unlabeled mixed-character passwords. All switches start OFF.
 
