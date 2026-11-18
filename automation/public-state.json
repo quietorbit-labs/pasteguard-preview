@@ -53,6 +53,12 @@
       "container_id": "17910789213394868",
       "media_id": "18379349515245917",
       "permalink": "https://www.instagram.com/reel/Df1JPo8hOEe/"
+    },
+    "2026-11-17": {
+      "phase": "prepared",
+      "caption": "Secret in your webhook log?\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
+      "example": "integration_debug",
+      "hook": "Secret in your webhook log?"
     }
   }
 }
