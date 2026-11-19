@@ -64,7 +64,7 @@
       "permalink": "https://www.instagram.com/reel/Df3rHc9vBrI/"
     },
     "2026-11-18": {
-      "phase": "processing",
+      "phase": "publishing",
       "caption": "Hide the log password\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "error_log",
       "hook": "Hide the log password",
