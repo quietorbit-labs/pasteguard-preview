@@ -73,7 +73,7 @@
       "permalink": "https://www.instagram.com/reel/Df6MsgHRmZf/"
     },
     "2026-11-19": {
-      "phase": "processing",
+      "phase": "publishing",
       "caption": "Hide the customer email\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "support_ticket",
       "hook": "Hide the customer email",
