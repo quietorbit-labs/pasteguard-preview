@@ -91,10 +91,11 @@
       "permalink": "https://www.instagram.com/reel/Df_UvgfhzRV/"
     },
     "2026-11-21": {
-      "phase": "prepared",
+      "phase": "processing",
       "caption": "Hide the GitHub token\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "code_review",
-      "hook": "Hide the GitHub token"
+      "hook": "Hide the GitHub token",
+      "container_id": "17911865766394868"
     }
   }
 }
