@@ -100,11 +100,12 @@
       "permalink": "https://www.instagram.com/reel/DgBz99aTr_p/"
     },
     "2026-11-22": {
-      "phase": "publishing",
+      "phase": "published",
       "caption": "Hide the Slack token\n\nPasteGuard hid the detected secret and kept the rest of the text. Real demo with fake data. Can miss secrets. Review before sharing.\n\nTry the free demo: link in bio. Need help installing? Use the help link in the install guide.",
       "example": "team_chat",
       "hook": "Hide the Slack token",
-      "container_id": "17912102433394868"
+      "container_id": "17912102433394868",
+      "media_id": "18189824071417973"
     }
   }
 }
