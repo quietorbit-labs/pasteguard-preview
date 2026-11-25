@@ -1,29 +1,12 @@
-name: PasteGuard daily cloud video and assessment
+name: PasteGuard daily assessment and creative preview
 on:
   push:
     paths: ['automation/**', '.github/workflows/pasteguard-daily.yml']
     branches: ['main', 'pasteguard-cloud-setup']
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish once today after rendering (requires connected Meta account)'
-        type: boolean
-        default: false
-      wait_for_slot:
-        description: 'Stage the reel now and publish at 11 PM Central'
-        type: boolean
-        default: false
   schedule:
     - cron: '17 5,11,17 * * *'
       timezone: 'America/Chicago'
-    # These UTC wakeups cover both Central offsets. Python sets the local publish time.
-    - cron: '19 0 * * *'
-    - cron: '37 0 * * *'
-    - cron: '19 1 * * *'
-    - cron: '19 2 * * *'
-    - cron: '19 3 * * *'
-    - cron: '19 4 * * *'
-    - cron: '41 4 * * *'
 permissions:
   contents: read
 concurrency:
@@ -40,15 +23,16 @@ jobs:
       IG_USER_ID: ${{ secrets.IG_USER_ID }}
       IG_API_VERSION: ${{ vars.IG_API_VERSION }}
       IG_API_HOST: ${{ vars.IG_API_HOST || 'https://graph.instagram.com' }}
-      IG_PUBLISH_ENABLED: ${{ vars.IG_PUBLISH_ENABLED }}
+      IG_PUBLISH_ENABLED: 'false'
       CF_ANALYTICS_TOKEN: ${{ secrets.CF_ANALYTICS_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
       CF_SITE_TAG: ${{ secrets.CF_SITE_TAG }}
       GITHUB_TOKEN: ${{ github.token }}
       TZ: America/Chicago
-      IG_WAIT_FOR_SLOT: ${{ (github.event_name == 'workflow_dispatch' && inputs.wait_for_slot) }}
-      NIGHTLY_TRIGGER: ${{ github.event_name == 'schedule' && github.event.schedule != '17 5,11,17 * * *' }}
-      PUBLISH_REQUESTED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+      # Cloudflare owns publication. GitHub only assesses and renders previews.
+      IG_WAIT_FOR_SLOT: 'false'
+      NIGHTLY_TRIGGER: 'false'
+      PUBLISH_REQUESTED: 'false'
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7.1.0
@@ -101,6 +85,10 @@ jobs:
       - name: Assess and plan
         if: steps.eligibility.outputs.eligible != 'false'
         run: python automation/bot.py prepare
+      - name: Check independent publisher connection and public state
+        run: |
+          curl --fail https://pasteguard-nightly-publisher.edric-yan2022.workers.dev/health
+          curl --fail --output run/publisher-status.json https://pasteguard-nightly-publisher.edric-yan2022.workers.dev/status
       - name: Capture fresh fake-data demo
         if: steps.eligibility.outputs.eligible != 'false'
         run: node automation/capture.mjs
@@ -125,8 +113,9 @@ jobs:
             run/proof-*.jpg
             run/verification.json
             run/assessment-status.json
+            run/publisher-status.json
       - name: State the actual result
         if: always()
         run: |
           echo '### PasteGuard cloud job' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Rendering runs on GitHub, independent of the owner PC. A rendering success is not publication confirmation. Publishing requires the connected Meta account and explicit enabled setting. Check the publishing step and durable state.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This workflow only assesses and renders previews. Cloudflare publishes at 11 PM America/Chicago independently of this runner and the owner PC. See the public publisher status for actual media IDs and links.' >> "$GITHUB_STEP_SUMMARY"

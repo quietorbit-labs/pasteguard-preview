@@ -1,0 +1,30 @@
+name: Verify tonight's actual cloud publication
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/pasteguard-timer-test.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pasteguard-cloud-timer-test
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 230
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Wait for 11 PM Central and verify actual publication
+        run: python automation/verify_cloud_timer.py
+      - name: Preserve actual test result
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: cloud-publisher-test-${{ github.run_id }}
+          path: run/cloud-timer-test.json
+          if-no-files-found: ignore
+          retention-days: 14
