@@ -1,0 +1,11 @@
+{
+  "name": "pasteguard-nightly-publisher",
+  "main": "cloud-publisher.mjs",
+  "compatibility_date": "2026-11-01",
+  "vars": { "IG_USER_ID": "17841471846015276", "IG_API_VERSION": "v26.0" },
+  "durable_objects": {
+    "bindings": [{ "name": "PUBLISHER", "class_name": "NightlyPublisher" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NightlyPublisher"] }],
+  "triggers": { "crons": ["30,45,55 3,4 * * *", "* 4,5 * * *"] }
+}
