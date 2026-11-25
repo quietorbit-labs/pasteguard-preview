@@ -2,8 +2,8 @@
 import datetime as dt
 import json
 import os
+import subprocess
 import time
-import urllib.request
 from zoneinfo import ZoneInfo
 
 ZONE = ZoneInfo('America/Chicago')
@@ -11,8 +11,11 @@ BASE = 'https://pasteguard-nightly-publisher.edric-yan2022.workers.dev'
 
 
 def get(path):
-    with urllib.request.urlopen(BASE + path, timeout=30) as response:
-        return json.load(response)
+    # Use the same HTTP client as the verified deployment connection check.
+    return json.loads(subprocess.check_output([
+        'curl', '--fail', '--silent', '--show-error', '--max-time', '30',
+        '--retry', '2', BASE + path,
+    ], text=True))
 
 
 def main():
@@ -26,7 +29,7 @@ def main():
     assert health['connected'] and health['username'] == 'pasteguard.local'
     print('Connected cloud timer. This test never sends a publishing request.', flush=True)
     while dt.datetime.now(ZONE) < target:
-        time.sleep(min(60, (target - dt.datetime.now(ZONE)).total_seconds()))
+        time.sleep(max(0, min(60, (target - dt.datetime.now(ZONE)).total_seconds())))
     result = None
     while dt.datetime.now(ZONE) <= deadline:
         try:
@@ -40,7 +43,7 @@ def main():
                 break
             if record.get('phase') in ('blocked', 'observed_post'):
                 raise SystemExit(f'Independent timer did not publish: {record["phase"]}. No retry requested.')
-        except (OSError, ValueError, KeyError) as error:
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
             print(f'Read-only check temporarily unavailable: {type(error).__name__}', flush=True)
         time.sleep(30)
     os.makedirs('run', exist_ok=True)

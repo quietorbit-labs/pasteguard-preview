@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [.github/workflows/pasteguard-timer-test.yml]
+    paths: [.github/workflows/pasteguard-timer-test.yml, automation/verify_cloud_timer.py]
 permissions:
   contents: read
 concurrency:
