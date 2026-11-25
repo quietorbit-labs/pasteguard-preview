@@ -1,0 +1,37 @@
+name: Deploy independent nightly publisher
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pasteguard-timer-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: f966645c2cd5857a39c79b8c27867e19
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_PUBLISHER_DEPLOY_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Check timer and duplicate prevention
+        run: node automation/test-cloud-publisher.mjs
+      - name: Install official deployment tool
+        run: npm install --no-save wrangler@4.168.0
+      - name: Deploy stored timer and schedules
+        run: npx wrangler deploy --config automation/cloud-publisher.wrangler.jsonc
+      - name: Connect existing Instagram publishing credential
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: |
+          test -n "$IG_ACCESS_TOKEN"
+          printf '%s' "$IG_ACCESS_TOKEN" | npx wrangler secret put IG_ACCESS_TOKEN --config automation/cloud-publisher.wrangler.jsonc
+      - name: Verify live identity and silent library without publishing
+        run: |
+          curl --fail --retry 4 --retry-delay 10 https://pasteguard-nightly-publisher.edric-yan2022.workers.dev/health
+          curl --fail https://pasteguard-nightly-publisher.edric-yan2022.workers.dev/status

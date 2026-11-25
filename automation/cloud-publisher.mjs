@@ -24,11 +24,12 @@ export default {
     context.waitUntil(publisher.fetch('https://publisher.internal/tick'));
   },
   async fetch(request, env) {
-    if (request.method !== 'GET' || new URL(request.url).pathname !== '/status') {
+    const path = new URL(request.url).pathname;
+    if (request.method !== 'GET' || !['/status', '/health'].includes(path)) {
       return new Response('Not found', { status: 404 });
     }
     const publisher = env.PUBLISHER.get(env.PUBLISHER.idFromName('pasteguard'));
-    return publisher.fetch('https://publisher.internal/status');
+    return publisher.fetch(`https://publisher.internal${path}`);
   },
 };
 
@@ -40,6 +41,18 @@ export class NightlyPublisher {
   }
 
   async fetch(request) {
+    if (new URL(request.url).pathname === '/health') {
+      try {
+        await this.media();
+        const response = await fetch('https://github.com/quietorbit-labs/pasteguard-preview/releases/download/pasteguard-silent-library-v1/library.json');
+        if (!response.ok) throw new Error('Video library unavailable');
+        const library = await response.json();
+        if (library.videos?.length !== 6) throw new Error('Video library incomplete');
+        return Response.json({ connected: true, username: USERNAME, videos: 6, timezone: TIMEZONE, publish_time: '23:00' });
+      } catch (error) {
+        return Response.json({ connected: false, error: error.message }, { status: 503 });
+      }
+    }
     if (new URL(request.url).pathname === '/status') {
       const records = await this.context.storage.list({ prefix: 'day:', reverse: true, limit: 8 });
       return Response.json({ days: Object.fromEntries(records) });
